@@ -55,7 +55,7 @@ func (c *CRT) Watch(ctx context.Context, event chan<- *Event) (err error) {
                 Height:  ch.Number,
                 Length:  big.NewInt(0),
             }
-        case ch.Number.Uint64() == c.height.Uint64():
+        case ch.Number.Uint64() <= c.height.Uint64():
             length := big.NewInt(0).Sub(c.height, ch.Number)
             event <- &Event{
                 Height:  ch.Number,
