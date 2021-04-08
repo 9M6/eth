@@ -11,10 +11,16 @@ import (
 )
 
 type CRT struct {
-    rpc *ethclient.Client
-    top *big.Int
-    log map[*big.Int]*types.Header
-    chn chan *types.Header
+    conn   *ethclient.Client
+    ch     chan *types.Header
+    height *big.Int
+    chain  map[*big.Int]*types.Header
+}
+
+type Event struct {
+    Height  *big.Int
+    Message string
+    Length  *big.Int
 }
 
 func NewCRT(host string) (*CRT, error) {
@@ -22,25 +28,48 @@ func NewCRT(host string) (*CRT, error) {
     if err != nil {
         return nil, err
     }
+
     return &CRT{
-        rpc: rpc,
-        log: make(map[*big.Int]*types.Header),
-        top: big.NewInt(0),
-        chn:  make(chan *types.Header),
+        conn:   rpc,
+        ch:     make(chan *types.Header),
+        height: big.NewInt(0),
+        chain:  make(map[*big.Int]*types.Header),
     }, nil
 }
 
-func (c CRT) Watch(ctx context.Context, event chan<- string) error {
-    conn, err := c.rpc.SubscribeNewHead(ctx, c.chn)
+func (c *CRT) Watch(ctx context.Context, event chan<- *Event) (err error) {
+    conn, err := c.conn.SubscribeNewHead(ctx, c.ch)
     if err != nil {
         log.Fatal(err)
     }
     defer conn.Unsubscribe()
 
-    for ch := range c.chn {
-        if ch.Number.Int64() <= c.top.Int64() {
+    fmt.Println("Connected...")
+    fmt.Println("Looking up for Chain Reorganisations...")
 
+    for ch := range c.ch {
+        switch {
+        case ch.Number.Uint64() == c.height.Uint64():
+            event <- &Event{
+                Message: "chain reorganisation event",
+                Height:  ch.Number,
+                Length:  big.NewInt(0),
+            }
+        case ch.Number.Uint64() == c.height.Uint64():
+            length := big.NewInt(0).Sub(c.height, ch.Number)
+            event <- &Event{
+                Height:  ch.Number,
+                Length:  length,
+                Message: "chain reorganisation event",
+            }
+            for i := uint64(0); i < length.Uint64(); i++ {
+                c.chain[ch.Number] = ch
+                c.height = ch.Number
+            }
         }
-        fmt.Println(ch.Number, ch.Root, ch.ParentHash, ch.Time, ch.Nonce)
+        c.chain[ch.Number] = ch
+        c.height = ch.Number
     }
+
+    return
 }
